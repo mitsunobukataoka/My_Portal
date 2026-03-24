@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マイポータル</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #002d62; /* ダークブルーの背景 */
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr); /* 8列のグリッド */
+            gap: 10px;
+            padding: 20px;
+        }
+        .tile {
+            aspect-ratio: 16 / 9;
+            border: 4px solid #1e4d8c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            padding: 4px;
+        }
+        .tile:hover {
+            opacity: 0.8;
+            transform: scale(1.02);
+        }
+        /* 未設定（空）の時のスタイル */
+        .tile-empty {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 2px dashed #1e4d8c;
+            cursor: default;
+        }
+        .tile-empty:hover {
+            transform: none;
+            opacity: 1;
+        }
+
+        /* 各カラーバリエーション */
+        .color-default { background-color: #dbeafe; color: #000; } /* 薄い青 */
+        .color-yellow { background-color: #fef3c7; color: #000; }  /* 薄い黄 */
+        .color-green { background-color: #ecfccb; color: #000; }   /* 薄い緑 */
+        .color-orange { background-color: #ffedd5; color: #000; }  /* 薄いオレンジ */
+        .color-gray { background-color: #d1d5db; color: #000; }    /* グレー */
+        .color-white { background-color: #f3f4f6; color: #000; }   /* 白系 */
+
+        .edit-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: none;
+            flex-direction: column;
+            padding: 5px;
+            font-size: 10px;
+            z-index: 10;
+        }
+        .editing .edit-overlay {
+            display: flex;
+        }
+        .admin-bar {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="admin-bar">
+        <h1 class="text-xl font-bold">My Portal</h1>
+        <div class="flex items-center gap-4">
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="editModeToggle" class="sr-only peer">
+                <div class="relative w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <span class="ms-3 text-sm font-medium">編集モード</span>
+            </label>
+            <button onclick="resetData()" class="text-xs bg-red-800 hover:bg-red-700 px-2 py-1 rounded transition-colors">すべての内容をクリア</button>
+        </div>
+    </div>
+
+    <div id="grid" class="grid-container">
+        <!-- JSでタイルを生成します -->
+    </div>
+
+    <script>
+        const ROWS = 5;
+        const COLS = 8;
+        const STORAGE_KEY = 'portal_tiles_data';
+
+        let tilesData = [];
+        let isEditMode = false;
+
+        // データの読み込み
+        function loadData() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            // 保存されたデータがある場合はそれを使い、なければ空の配列
+            tilesData = saved ? JSON.parse(saved) : [];
+            renderGrid();
+        }
+
+        // データの保存
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tilesData));
+        }
+
+        // グリッドの描画
+        function renderGrid() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            for (let i = 0; i < ROWS * COLS; i++) {
+                const data = tilesData.find(t => t.id === i);
+                const hasData = !!(data && (data.text || data.url));
+                
+                const tile = document.createElement('div');
+                
+                // データがない、かつ編集モードでない場合は「透明な枠」にする
+                if (!hasData && !isEditMode) {
+                    tile.className = 'tile tile-empty';
+                    tile.innerHTML = '';
+                } else {
+                    const currentData = data || { id: i, text: "", url: "", color: "color-default" };
+                    tile.className = `tile ${currentData.color} ${isEditMode ? 'editing' : ''}`;
+                    tile.innerHTML = `
+                        <span class="tile-text">${currentData.text}</span>
+                        <div class="edit-overlay" onclick="event.stopPropagation()">
+                            <input type="text" placeholder="ボタン名" value="${currentData.text}" oninput="updateTile(${i}, 'text', this.value)" class="mb-1 p-1 text-black border w-full rounded">
+                            <input type="text" placeholder="URL (http...)" value="${currentData.url}" oninput="updateTile(${i}, 'url', this.value)" class="mb-1 p-1 text-black border w-full text-[8px] rounded">
+                            <select onchange="updateTile(${i}, 'color', this.value)" class="text-black p-1 w-full border rounded">
+                                <option value="color-default" ${currentData.color === 'color-default' ? 'selected' : ''}>青</option>
+                                <option value="color-yellow" ${currentData.color === 'color-yellow' ? 'selected' : ''}>黄</option>
+                                <option value="color-green" ${currentData.color === 'color-green' ? 'selected' : ''}>緑</option>
+                                <option value="color-orange" ${currentData.color === 'color-orange' ? 'selected' : ''}>橙</option>
+                                <option value="color-gray" ${currentData.color === 'color-gray' ? 'selected' : ''}>灰</option>
+                                <option value="color-white" ${currentData.color === 'color-white' ? 'selected' : ''}>白</option>
+                            </select>
+                        </div>
+                    `;
+
+                    tile.onclick = () => {
+                        if (!isEditMode && currentData.url && currentData.url !== "#") {
+                            window.open(currentData.url, '_blank');
+                        }
+                    };
+                }
+
+                grid.appendChild(tile);
+            }
+        }
+
+        // タイル情報の更新
+        function updateTile(id, field, value) {
+            let tileIndex = tilesData.findIndex(t => t.id === id);
+            
+            if (tileIndex === -1) {
+                // 新規作成
+                const newTile = { id: id, text: "", url: "", color: "color-default" };
+                newTile[field] = value;
+                tilesData.push(newTile);
+            } else {
+                // 更新
+                tilesData[tileIndex][field] = value;
+            }
+            
+            saveData();
+            
+            // 色やテキストが変更された際、編集しにくくならないようinput以外の要素(text表示など)を更新
+            if (field === 'color' || field === 'text') {
+                const tileEl = document.querySelectorAll('.tile')[id];
+                const textSpan = tileEl.querySelector('.tile-text');
+                if (textSpan) textSpan.innerText = value;
+                if (field === 'color') {
+                    // 色変更はクラス名を付け替える必要があるため再描画
+                    renderGrid();
+                }
+            }
+        }
+
+        // リセット
+        function resetData() {
+            if (confirm('すべてのボタン設定を消去して空にしますか？')) {
+                tilesData = [];
+                localStorage.removeItem(STORAGE_KEY);
+                renderGrid();
+            }
+        }
+
+        // 編集モード切り替え
+        document.getElementById('editModeToggle').addEventListener('change', (e) => {
+            isEditMode = e.target.checked;
+            renderGrid();
+        });
+
+        // 初期化
+        window.onload = loadData;
+    </script>
+</body>
+</html>
